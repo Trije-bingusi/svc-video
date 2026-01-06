@@ -1,0 +1,6 @@
+# This file is required for Prisma to lock the migration engine
+# DO NOT EDIT
+
+# Prisma Migrate lockfile v1
+
+provider = "postgresql"

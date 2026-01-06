@@ -1,0 +1,43 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model VideoUpload {
+  id                String    @id @default(uuid()) @db.Uuid
+  lecture_id        String    @db.Uuid
+  user_id           String?   @db.Uuid
+  filename          String
+  original_filename String
+  file_size         Int
+  mime_type         String
+  
+  // Azure Blob Storage
+  blob_url          String    @db.Text
+  blob_container    String
+  blob_name         String
+  
+  // Azure Media Services (optional - for encoding)
+  ams_asset_name    String?
+  ams_job_name      String?
+  encoding_status   String?   @default("pending") // pending, processing, completed, failed
+  hls_url           String?   @db.Text
+  
+  // Metadata
+  duration          Int?      // duration in seconds
+  resolution        String?   // e.g., "1920x1080"
+  
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+  
+  @@index([lecture_id])
+  @@index([user_id])
+  @@index([encoding_status])
+}

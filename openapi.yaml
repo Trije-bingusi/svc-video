@@ -1,0 +1,353 @@
+openapi: 3.0.0
+info:
+  title: Video Upload Service API
+  description: Microservice for uploading and managing video files with Azure Blob Storage integration
+  version: 1.0.0
+  contact:
+    name: eUčilnica+ Team
+    url: https://github.com/Trije-bingusi
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Health check and readiness endpoints
+  - name: Metrics
+    description: Prometheus metrics
+  - name: Uploads
+    description: Video upload management
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      description: Returns OK if the service is running
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+
+  /readyz:
+    get:
+      summary: Readiness check
+      description: Returns READY if the service can accept requests (DB is connected)
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: READY
+        '500':
+          description: Service is not ready
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: NOT READY
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns Prometheus metrics for monitoring
+      tags:
+        - Metrics
+      responses:
+        '200':
+          description: Metrics in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/lectures/{lectureId}/uploads:
+    get:
+      summary: Get all video uploads for a lecture
+      description: Returns a list of all video uploads associated with a specific lecture
+      tags:
+        - Uploads
+      parameters:
+        - name: lectureId
+          in: path
+          required: true
+          description: UUID of the lecture
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of uploads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VideoUpload'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/lectures/{lectureId}/upload:
+    post:
+      summary: Upload a video file
+      description: Upload a video file for a specific lecture to Azure Blob Storage
+      tags:
+        - Uploads
+      parameters:
+        - name: lectureId
+          in: path
+          required: true
+          description: UUID of the lecture
+          schema:
+            type: string
+            format: uuid
+        - name: x-user-sub
+          in: header
+          required: false
+          description: User ID from authentication token
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                video:
+                  type: string
+                  format: binary
+                  description: Video file to upload
+              required:
+                - video
+      responses:
+        '201':
+          description: Video uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoUpload'
+        '400':
+          description: Bad request (no file provided or invalid file type)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/uploads/{id}:
+    get:
+      summary: Get a specific video upload
+      description: Returns details of a specific video upload by ID
+      tags:
+        - Uploads
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the upload
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Upload details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoUpload'
+        '404':
+          description: Upload not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete a video upload
+      description: Deletes a video upload from both Azure Blob Storage and the database
+      tags:
+        - Uploads
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the upload
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Upload deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Upload deleted successfully
+        '404':
+          description: Upload not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/uploads/{id}/encoding-status:
+    patch:
+      summary: Update encoding status
+      description: Updates the encoding status of a video (typically called by Azure Media Services webhook)
+      tags:
+        - Uploads
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the upload
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                encoding_status:
+                  type: string
+                  enum: [pending, processing, completed, failed]
+                  description: Current encoding status
+                hls_url:
+                  type: string
+                  description: URL to the HLS manifest (m3u8)
+                duration:
+                  type: integer
+                  description: Video duration in seconds
+                resolution:
+                  type: string
+                  description: Video resolution (e.g., "1920x1080")
+      responses:
+        '200':
+          description: Encoding status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoUpload'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    VideoUpload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the upload
+        lecture_id:
+          type: string
+          format: uuid
+          description: ID of the associated lecture
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID of the user who uploaded the video
+        filename:
+          type: string
+          description: Generated unique filename
+        original_filename:
+          type: string
+          description: Original filename from upload
+        file_size:
+          type: integer
+          description: File size in bytes
+        mime_type:
+          type: string
+          description: MIME type of the video
+        blob_url:
+          type: string
+          description: URL to the blob in Azure Storage
+        blob_container:
+          type: string
+          description: Azure Blob Storage container name
+        blob_name:
+          type: string
+          description: Name of the blob in storage
+        ams_asset_name:
+          type: string
+          nullable: true
+          description: Azure Media Services asset name
+        ams_job_name:
+          type: string
+          nullable: true
+          description: Azure Media Services encoding job name
+        encoding_status:
+          type: string
+          enum: [pending, processing, completed, failed]
+          description: Status of video encoding
+        hls_url:
+          type: string
+          nullable: true
+          description: URL to HLS manifest for streaming
+        duration:
+          type: integer
+          nullable: true
+          description: Video duration in seconds
+        resolution:
+          type: string
+          nullable: true
+          description: Video resolution
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when upload was created
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when upload was last updated
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message

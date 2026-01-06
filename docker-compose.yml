@@ -1,0 +1,44 @@
+services:
+  svc-video-upload:
+    build: .
+    container_name: svc-video-upload
+    ports:
+      - "3004:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://postgres:postgres@db:5432/video_upload
+      
+      # Azure Blob Storage (leave empty for local development)
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-videos}
+      
+      # Azure Media Services (optional)
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+      AZURE_RESOURCE_GROUP: ${AZURE_RESOURCE_GROUP:-}
+      AZURE_MEDIA_SERVICES_ACCOUNT: ${AZURE_MEDIA_SERVICES_ACCOUNT:-}
+    depends_on:
+      - db
+    networks:
+      - rso-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: video-upload-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: video_upload
+    ports:
+      - "5433:5432"
+    volumes:
+      - video-upload-db-data:/var/lib/postgresql/data
+    networks:
+      - rso-network
+
+volumes:
+  video-upload-db-data:
+
+networks:
+  rso-network:
+    driver: bridge

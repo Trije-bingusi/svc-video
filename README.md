@@ -1,4 +1,4 @@
-# svc-video-upload
+# svc-video
 
 Microservice for uploading and managing video files with **Azure Blob Storage** integration for the _eUčilnica+_ platform.
 
@@ -16,7 +16,7 @@ This service handles:
 ## Architecture
 
 ```
-Client → svc-gateway → svc-video-upload → Azure Blob Storage
+Client → svc-gateway → svc-video → Azure Blob Storage
                     ↓
                 PostgreSQL
 ```
@@ -246,7 +246,7 @@ For video encoding and adaptive streaming, you can integrate with Azure Media Se
 ### Project Structure
 
 ```
-svc-video-upload/
+svc-video/
 ├── src/
 │   └── app.js           # Main Express application
 ├── prisma/
@@ -265,18 +265,18 @@ To integrate this service into the main platform:
 
 1. Create a new Git repository:
    ```bash
-   cd svc-video-upload
+   cd svc-video
    git init
    git add .
    git commit -m "Initial commit"
-   git remote add origin https://github.com/Trije-bingusi/svc-video-upload.git
+   git remote add origin https://github.com/Trije-bingusi/svc-video.git
    git push -u origin main
    ```
 
 2. Add as submodule in `rso-platform`:
    ```bash
    cd rso-platform
-   git submodule add https://github.com/Trije-bingusi/svc-video-upload.git
+   git submodule add https://github.com/Trije-bingusi/svc-video.git
    ```
 
 3. Update `rso-platform/docker-compose.yml` to include this service

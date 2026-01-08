@@ -1,7 +1,7 @@
 services:
-  svc-video-upload:
+  svc-video:
     build: .
-    container_name: svc-video-upload
+    container_name: svc-video
     ports:
       - "3004:3000"
     environment:

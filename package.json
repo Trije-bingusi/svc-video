@@ -1,5 +1,5 @@
 {
-  "name": "svc-video-upload",
+  "name": "svc-video",
   "version": "1.0.0",
   "description": "Video upload service with Azure Blob Storage and Media Services integration",
   "main": "src/app.js",
@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Trije-bingusi/svc-video-upload.git"
+    "url": "git+https://github.com/Trije-bingusi/svc-video.git"
   },
   "keywords": [
     "video",
@@ -25,12 +25,11 @@
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Trije-bingusi/svc-video-upload/issues"
+    "url": "https://github.com/Trije-bingusi/svc-video/issues"
   },
-  "homepage": "https://github.com/Trije-bingusi/svc-video-upload#readme",
+  "homepage": "https://github.com/Trije-bingusi/svc-video#readme",
   "dependencies": {
     "@azure/storage-blob": "^12.25.0",
-    "@azure/arm-mediaservices": "^13.2.0",
     "@azure/identity": "^4.5.0",
     "@prisma/client": "^6.17.1",
     "@scalar/express-api-reference": "^0.8.22",

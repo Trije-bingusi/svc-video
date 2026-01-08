@@ -5,8 +5,7 @@ import YAML from "yamljs";
 import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import { apiReference } from "@scalar/express-api-reference";
-import { BlobServiceClient } from "@azure/storage-blob";
-import { DefaultAzureCredential } from "@azure/identity";
+import { initializeBlobServiceClient, generateSasUrl, deleteBlob, uploadBlob } from "./azureStorage.js";
 
 function env(name, fallback) {
   const raw = process.env[name];
@@ -60,15 +59,7 @@ const upload = multer({
 // Initialize Azure Blob Service Client
 let blobServiceClient;
 if (USE_AZURE) {
-  if (AZURE_STORAGE_CONNECTION_STRING) {
-    blobServiceClient = BlobServiceClient.fromConnectionString(
-      AZURE_STORAGE_CONNECTION_STRING
-    );
-  } else {
-    const credential = new DefaultAzureCredential();
-    const accountUrl = `https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net`;
-    blobServiceClient = new BlobServiceClient(accountUrl, credential);
-  }
+  blobServiceClient = initializeBlobServiceClient(AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_CONNECTION_STRING);
 }
 
 const app = express();
@@ -192,25 +183,13 @@ app.post(
 
       if (USE_AZURE) {
         // Upload to Azure Blob Storage
-        const containerClient = blobServiceClient.getContainerClient(
-          AZURE_STORAGE_CONTAINER
+        blobUrl = await uploadBlob(
+          blobServiceClient,
+          AZURE_STORAGE_CONTAINER,
+          uniqueFilename,
+          req.file.buffer,
+          mimeType
         );
-
-        // Ensure container exists
-        await containerClient.createIfNotExists({
-          access: "blob", // public read access
-        });
-
-        const blockBlobClient = containerClient.getBlockBlobClient(uniqueFilename);
-
-        // Upload buffer to blob
-        await blockBlobClient.uploadData(req.file.buffer, {
-          blobHTTPHeaders: {
-            blobContentType: mimeType,
-          },
-        });
-
-        blobUrl = blockBlobClient.url;
       } else {
         // For local development without Azure
         blobUrl = `http://localhost:${PORT}/local-storage/${uniqueFilename}`;
@@ -264,11 +243,7 @@ app.delete("/api/uploads/:id", async (req, res) => {
 
     // Delete from Azure Blob Storage
     if (USE_AZURE) {
-      const containerClient = blobServiceClient.getContainerClient(
-        upload.blob_container
-      );
-      const blockBlobClient = containerClient.getBlockBlobClient(upload.blob_name);
-      await blockBlobClient.deleteIfExists();
+      await deleteBlob(blobServiceClient, upload.blob_container, upload.blob_name);
     }
 
     // Delete from database
@@ -306,8 +281,42 @@ app.patch("/api/uploads/:id/encoding-status", async (req, res) => {
   }
 });
 
+// Generate SAS URL for secure video access
+app.get("/api/uploads/:id/sas-url", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const expiresIn = Number(req.query.expiresIn) || 60; // Default 60 minutes
+
+    const upload = await prisma.videoUpload.findUnique({
+      where: { id },
+    });
+
+    if (!upload) {
+      return res.status(404).json({ error: "Upload not found" });
+    }
+
+    if (!USE_AZURE) {
+      // For local development, return the blob URL as is
+      return res.json({ url: upload.blob_url, expiresIn: null });
+    }
+
+    // Generate SAS URL
+    const sasUrl = await generateSasUrl(
+      blobServiceClient,
+      upload.blob_container,
+      upload.blob_name,
+      expiresIn
+    );
+
+    res.json({ url: sasUrl, expiresIn });
+  } catch (error) {
+    req.log.error(error, "Failed to generate SAS URL");
+    res.status(500).json({ error: "Failed to generate SAS URL" });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`svc-video-upload listening on port ${PORT}`);
+  console.log(`svc-video listening on port ${PORT}`);
   console.log(`API docs available at http://localhost:${PORT}/docs`);
-  console.log(`Azure integration: ${USE_AZURE ? "enabled" : "disabled (local mode)"}`);
+  console.log(`Azure integration: ${USE_AZURE ? "enabled" : "disabled (local mode)"}`)
 });

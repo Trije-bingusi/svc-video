@@ -3,9 +3,15 @@ import client from "prom-client";
 import pinoHttp from "pino-http";
 import YAML from "yamljs";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 import { apiReference } from "@scalar/express-api-reference";
 import { initializeBlobServiceClient, generateSasUrl, deleteBlob, uploadBlob } from "./azureStorage.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function env(name, fallback) {
   const raw = process.env[name];
@@ -24,11 +30,23 @@ const DATABASE_URL = env(
   "postgres://postgres:postgres@localhost:5432/video_upload"
 );
 
+// Gateway URL for constructing public video URLs
+const GATEWAY_URL = env("GATEWAY_URL", "http://localhost:8081");
+
 // Azure configuration
 const AZURE_STORAGE_ACCOUNT = env("AZURE_STORAGE_ACCOUNT", "");
 const AZURE_STORAGE_CONNECTION_STRING = env("AZURE_STORAGE_CONNECTION_STRING", "");
 const AZURE_STORAGE_CONTAINER = env("AZURE_STORAGE_CONTAINER", "videos");
 const USE_AZURE = AZURE_STORAGE_ACCOUNT !== "" || AZURE_STORAGE_CONNECTION_STRING !== "";
+
+// Local storage configuration
+const LOCAL_STORAGE_DIR = path.join(__dirname, "..", "local-storage");
+if (!USE_AZURE) {
+  // Create local storage directory if it doesn't exist
+  if (!fs.existsSync(LOCAL_STORAGE_DIR)) {
+    fs.mkdirSync(LOCAL_STORAGE_DIR, { recursive: true });
+  }
+}
 
 const prisma = new PrismaClient();
 
@@ -191,8 +209,84 @@ app.post(
           mimeType
         );
       } else {
-        // For local development without Azure
-        blobUrl = `http://localhost:${PORT}/local-storage/${uniqueFilename}`;
+        // For local development without Azure - save to disk
+        const filePath = path.join(LOCAL_STORAGE_DIR, uniqueFilename);
+        fs.writeFileSync(filePath, req.file.buffer);
+        blobUrl = `${GATEWAY_URL}/api/videos/${uniqueFilename}`;
+        blobContainer = "local";
+      }
+
+      // Save to database
+      const videoUpload = await prisma.videoUpload.create({
+        data: {
+          lecture_id: lectureId,
+          user_id: userId,
+          filename: uniqueFilename,
+          original_filename: originalFilename,
+          file_size: fileSize,
+          mime_type: mimeType,
+          blob_url: blobUrl,
+          blob_container: blobContainer,
+          blob_name: blobName,
+          encoding_status: "completed", // In real scenario, this would be 'pending'
+        },
+      });
+
+      videoUploadCounter.inc();
+      videoUploadSizeGauge.set(fileSize);
+
+      req.log.info(
+        { videoUploadId: videoUpload.id, lectureId, fileSize },
+        "Video uploaded successfully"
+      );
+
+      res.status(201).json(videoUpload);
+    } catch (error) {
+      req.log.error(error, "Failed to upload video");
+      res.status(500).json({ error: "Failed to upload video" });
+    }
+  }
+);
+
+// Upload video - alternative endpoint path
+app.post(
+  "/api/uploads/:lectureId",
+  upload.single("video"),
+  async (req, res) => {
+    try {
+      const { lectureId } = req.params;
+      const userId = req.headers["x-user-sub"] || null;
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No video file provided" });
+      }
+
+      const originalFilename = req.file.originalname;
+      const fileSize = req.file.size;
+      const mimeType = req.file.mimetype;
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const uniqueFilename = `${lectureId}_${timestamp}_${originalFilename}`;
+
+      let blobUrl;
+      let blobContainer = AZURE_STORAGE_CONTAINER;
+      let blobName = uniqueFilename;
+
+      if (USE_AZURE) {
+        // Upload to Azure Blob Storage
+        blobUrl = await uploadBlob(
+          blobServiceClient,
+          AZURE_STORAGE_CONTAINER,
+          uniqueFilename,
+          req.file.buffer,
+          mimeType
+        );
+      } else {
+        // For local development without Azure - save to disk
+        const filePath = path.join(LOCAL_STORAGE_DIR, uniqueFilename);
+        fs.writeFileSync(filePath, req.file.buffer);
+        blobUrl = `${GATEWAY_URL}/api/videos/${uniqueFilename}`;
         blobContainer = "local";
       }
 
@@ -312,6 +406,29 @@ app.get("/api/uploads/:id/sas-url", async (req, res) => {
   } catch (error) {
     req.log.error(error, "Failed to generate SAS URL");
     res.status(500).json({ error: "Failed to generate SAS URL" });
+  }
+});
+
+// Serve video files from local storage
+app.get("/api/videos/:filename", (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(LOCAL_STORAGE_DIR, filename);
+
+    // Security: prevent directory traversal
+    if (!filePath.startsWith(LOCAL_STORAGE_DIR)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Video not found" });
+    }
+
+    // Stream the video file
+    res.sendFile(filePath);
+  } catch (error) {
+    req.log.error(error, "Failed to serve video file");
+    res.status(500).json({ error: "Failed to serve video file" });
   }
 });
 

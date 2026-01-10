@@ -22,15 +22,19 @@ export function initializeBlobServiceClient(storageAccount, connectionString) {
  * @param {string} containerName
  * @param {string} blobName
  * @param {number} expiresInMinutes - How long the SAS token is valid (default: 60 minutes)
+ * @param {boolean} writePermission - If true, grants write permission; otherwise read-only
  * @returns {Promise<string>} The blob URL with SAS token
  */
-export async function generateSasUrl(blobServiceClient, containerName, blobName, expiresInMinutes = 60) {
+export async function generateSasUrl(blobServiceClient, containerName, blobName, expiresInMinutes = 60, writePermission = false) {
   try {
     const containerClient = blobServiceClient.getContainerClient(containerName);
     const blobClient = containerClient.getBlobClient(blobName);
 
     // Try to get the account key from the connection string or use user delegation key
     const accountName = blobServiceClient.accountName;
+    
+    // Determine permissions
+    const permissions = writePermission ? BlobSASPermissions.parse("rcw") : BlobSASPermissions.parse("r");
     
     // For development with connection strings, extract the key
     if (blobServiceClient.credential instanceof StorageSharedKeyCredential) {
@@ -41,7 +45,7 @@ export async function generateSasUrl(blobServiceClient, containerName, blobName,
         {
           containerName,
           blobName,
-          permissions: BlobSASPermissions.parse("r"), // read-only
+          permissions,
           startsOn,
           expiresOn,
         },
@@ -60,7 +64,7 @@ export async function generateSasUrl(blobServiceClient, containerName, blobName,
         {
           containerName,
           blobName,
-          permissions: BlobSASPermissions.parse("r"), // read-only
+          permissions,
           startsOn,
           expiresOn,
         },
